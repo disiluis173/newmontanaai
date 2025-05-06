@@ -518,13 +518,12 @@ export default function ImagesPage() {
                 {images.map((image, index) => (
                   <div key={index} className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden">
                     <div className="relative aspect-square">
-                      <Image
+                      {/* Temporalmente volvemos a img mientras validamos next.config.js */}
+                      <img
                         src={image.url || image.b64_json || ''}
                         alt={`Imagen generada ${index + 1}`}
                         className="w-full h-full object-cover"
-                        fill
-                        sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
-                        priority={index < 2}
+                        loading="lazy"
                       />
                       <div className="absolute bottom-2 right-2 flex gap-2">
                         <button
