@@ -1,7 +1,22 @@
 'use client'
 
 import React, { useState, useRef, useEffect } from 'react';
-import { FaPaperPlane, FaKey, FaRobot, FaUser, FaArrowUp, FaCog } from 'react-icons/fa';
+import { 
+  FaPaperPlane, 
+  FaKey, 
+  FaRobot, 
+  FaUser, 
+  FaArrowUp, 
+  FaCog,
+  FaCopy,
+  FaDownload,
+  FaTrash,
+  FaCode,
+  FaMarkdown,
+  FaFilePdf,
+  FaFileAlt,
+  FaFileCode
+} from 'react-icons/fa';
 import { BiSend } from 'react-icons/bi';
 import Message from './Message';
 import ApiKeyModal from './ApiKeyModal';
@@ -13,6 +28,11 @@ import {
   streamMessageFromXAI
 } from '../lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { saveAs } from 'file-saver';
+import { marked } from 'marked';
+import DOMPurify from 'dompurify';
 
 const Chat = () => {
   const apiKeyContext = useApiKey();
@@ -28,40 +48,42 @@ const Chat = () => {
   const inputRef = useRef(null);
   const [hasApiKeyCheck, setHasApiKeyCheck] = useState(false);
 
+  // Nuevo estado para las opciones de código
+  const [codeOptions, setCodeOptions] = useState({
+    show: false,
+    content: '',
+    language: 'javascript',
+    position: { x: 0, y: 0 }
+  });
+
   // Configuración de modelos disponibles
   const MODEL_CONFIG = {
     deepseek: {
-      default: 'deepseek-chat',
-      models: {
-        'deepseek-chat': {
-          name: 'DeepSeek Chat',
-          description: 'Modelo estándar de DeepSeek'
-        }
+      'deepseek-chat': {
+        name: 'DeepSeek Chat',
+        description: 'Modelo estándar de DeepSeek'
       }
     },
     xai: {
-      default: 'grok-3-beta',
-      models: {
-        'grok-3-beta': {
-          name: 'Grok 3 Beta',
-          description: 'Modelo estándar de Grok',
-          price: { input: '$3.00', output: '$15.00' }
-        },
-        'grok-3-mini-beta': {
-          name: 'Grok 3 Mini Beta',
-          description: 'Modelo económico de Grok',
-          price: { input: '$0.30', output: '$0.50' }
-        },
-        'grok-3-fast-beta': {
-          name: 'Grok 3 Fast Beta',
-          description: 'Modelo rápido de Grok',
-          price: { input: '$5.00', output: '$25.00' }
-        },
-        'grok-3-mini-fast-beta': {
-          name: 'Grok 3 Mini Fast Beta',
-          description: 'Modelo rápido y económico de Grok',
-          price: { input: '$0.60', output: '$4.00' }
-        }
+      'grok-3-beta': {
+        name: 'Grok 3 Beta',
+        description: 'Modelo estándar de Grok',
+        price: { input: '$3.00', output: '$15.00' }
+      },
+      'grok-3-mini-beta': {
+        name: 'Grok 3 Mini Beta',
+        description: 'Modelo económico de Grok',
+        price: { input: '$0.30', output: '$0.50' }
+      },
+      'grok-3-fast-beta': {
+        name: 'Grok 3 Fast Beta',
+        description: 'Modelo rápido de Grok',
+        price: { input: '$5.00', output: '$25.00' }
+      },
+      'grok-3-mini-fast-beta': {
+        name: 'Grok 3 Mini Fast Beta',
+        description: 'Modelo rápido y económico de Grok',
+        price: { input: '$0.60', output: '$4.00' }
       }
     }
   };
@@ -194,151 +216,171 @@ const Chat = () => {
 
   const providerClass = currentProvider === 'deepseek' ? 'from-purple-600 to-indigo-600' : 'from-blue-600 to-blue-800';
 
-  return (
-    <div className="flex flex-col h-full">
-      {/* Barra superior */}
-      <div className={`bg-gradient-to-r ${providerClass} text-white p-4 flex justify-between items-center shadow-md`}>
-        <div className="flex items-center gap-2">
-          <FaRobot className="text-xl md:text-2xl" />
-          <h1 className="text-lg md:text-xl font-bold">Montana AI Chat</h1>
-        </div>
-        
-        <div className="flex items-center gap-2 md:gap-4">
-          <select
-            value={currentProvider}
-            onChange={(e) => handleProviderChange(e.target.value)}
-            className="bg-white/20 text-white text-sm md:text-base backdrop-blur-sm p-2 rounded-lg border border-white/30 focus:outline-none focus:ring-2 focus:ring-white/50"
-          >
-            <option value="deepseek">DeepSeek AI</option>
-            <option value="xai">X.AI (Grok)</option>
-          </select>
+  // Función para copiar código
+  const copyCode = (content, withMarkdown = false) => {
+    const text = withMarkdown ? `\`\`\`${codeOptions.language}\n${content}\n\`\`\`` : content;
+    navigator.clipboard.writeText(text);
+  };
 
-          {currentProvider === 'xai' && (
-            <select
-              value={currentModel}
-              onChange={(e) => setCurrentModel(e.target.value)}
-              className="bg-white/20 text-white text-sm md:text-base backdrop-blur-sm p-2 rounded-lg border border-white/30 focus:outline-none focus:ring-2 focus:ring-white/50"
+  // Función para descargar chat en PDF
+  const downloadChatPDF = () => {
+    const content = messages.map(msg => 
+      `${msg.isUser ? 'Usuario' : 'Asistente'}: ${msg.content}`
+    ).join('\n\n');
+    
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    saveAs(blob, 'chat-conversation.txt');
+  };
+
+  // Función para limpiar el chat
+  const clearChat = () => {
+    if (window.confirm('¿Estás seguro de que quieres borrar toda la conversación?')) {
+      setMessages([]);
+    }
+  };
+
+  // Función para detectar y formatear código
+  const formatMessage = (content) => {
+    const codeBlocks = content.match(/```([\s\S]*?)```/g);
+    if (!codeBlocks) return content;
+
+    let formattedContent = content;
+    codeBlocks.forEach(block => {
+      const language = block.match(/```(\w+)/)?.[1] || 'plaintext';
+      const code = block.replace(/```\w*\n?/, '').replace(/```$/, '');
+      formattedContent = formattedContent.replace(
+        block,
+        `<div class="code-block" data-language="${language}">${code}</div>`
+      );
+    });
+
+    return formattedContent;
+  };
+
+  return (
+    <div className="flex flex-col h-screen bg-gray-50 dark:bg-gray-900">
+      <div className="flex-none p-4 border-b border-gray-200 dark:border-gray-700">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
+            <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-blue-800 bg-clip-text text-transparent text-center sm:text-left">
+              Montana AI
+            </h1>
+            <div className="flex flex-col sm:flex-row items-center gap-2 w-full sm:w-auto">
+              <div className="w-full sm:w-auto">
+                <select
+                  value={currentProvider}
+                  onChange={(e) => setCurrentProvider(e.target.value)}
+                  className="w-full sm:w-auto px-3 py-2 rounded-lg bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white"
+                >
+                  <option value="deepseek">DeepSeek</option>
+                  <option value="xai">X.AI (Grok)</option>
+                </select>
+              </div>
+              {currentProvider === 'xai' && (
+                <div className="w-full sm:w-auto">
+                  <div className="flex flex-col gap-1">
+                    <select
+                      value={currentModel}
+                      onChange={(e) => setCurrentModel(e.target.value)}
+                      className="w-full sm:w-auto px-3 py-2 rounded-lg bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white"
+                    >
+                      {Object.entries(MODEL_CONFIG.xai).map(([key, model]) => (
+                        <option key={key} value={key}>
+                          {model.name}
+                        </option>
+                      ))}
+                    </select>
+                    {currentModel && MODEL_CONFIG.xai[currentModel]?.price && (
+                      <div className="text-xs text-gray-500 dark:text-gray-400 text-center sm:text-left">
+                        Precio: {MODEL_CONFIG.xai[currentModel].price.input} / {MODEL_CONFIG.xai[currentModel].price.output}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="flex items-center gap-2 w-full sm:w-auto justify-center sm:justify-end mt-2 sm:mt-0">
+            <button
+              onClick={() => setShowApiKeyModal(true)}
+              className="p-2 rounded-lg bg-blue-500 hover:bg-blue-600 text-white"
+              title="Configurar API Key"
             >
-              {Object.entries(MODEL_CONFIG.xai.models).map(([key, model]) => (
-                <option key={key} value={key}>
-                  {model.name} {model.price ? `(${model.price.input} / ${model.price.output})` : ''}
-                </option>
-              ))}
-            </select>
-          )}
-          
-          <button
-            onClick={() => setShowApiKeyModal(true)}
-            className="flex items-center gap-1 md:gap-2 bg-white/20 hover:bg-white/30 px-2 md:px-3 py-2 rounded-lg backdrop-blur-sm transition-all duration-200 text-sm md:text-base"
-          >
-            <FaKey /> <span className="hidden md:inline">API Key</span>
-          </button>
+              <FaKey />
+            </button>
+            <button
+              onClick={clearChat}
+              className="p-2 rounded-lg bg-red-500 hover:bg-red-600 text-white"
+              title="Limpiar chat"
+            >
+              <FaTrash />
+            </button>
+            <button
+              onClick={downloadChatPDF}
+              className="p-2 rounded-lg bg-green-500 hover:bg-green-600 text-white"
+              title="Exportar chat"
+            >
+              <FaDownload />
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Contenedor de mensajes */}
-      <div 
-        ref={chatContainerRef}
-        className="flex-grow p-2 md:p-4 overflow-y-auto bg-gray-50 dark:bg-gray-900 dark:text-gray-100"
-      >
-        <AnimatePresence>
+      <div className="flex-1 overflow-y-auto p-4">
+        <div className="max-w-4xl mx-auto space-y-4">
           {messages.length === 0 ? (
-            <motion.div 
-              className="flex flex-col items-center justify-center h-full text-center text-gray-500 dark:text-gray-400 gap-6"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5 }}
-            >
-              <div className={`p-5 rounded-full bg-gradient-to-r ${providerClass} shadow-lg`}>
-                <FaRobot className="text-4xl text-white" />
+            <div className="flex flex-col items-center justify-center h-full text-center text-gray-500 dark:text-gray-400 gap-6">
+              <div className="p-6 rounded-full bg-gradient-to-r from-blue-600 to-blue-800 shadow-xl">
+                <FaRobot className="text-5xl text-white" />
               </div>
               <div>
-                <p className="text-xl md:text-2xl mb-2 font-bold">¡Bienvenido a Montana AI!</p>
-                <p className="max-w-md mx-auto text-sm md:text-base">
+                <p className="text-2xl font-bold mb-2">¡Bienvenido a Montana AI!</p>
+                <p className="max-w-md mx-auto">
                   Selecciona un proveedor, configura tu API Key y comienza a chatear 
                   con los modelos de IA más avanzados.
                 </p>
               </div>
-              <button
-                onClick={() => setShowApiKeyModal(true)}
-                className={`mt-4 px-4 py-2 bg-gradient-to-r ${providerClass} text-white rounded-lg flex items-center gap-2 hover:shadow-lg transition-all duration-200`}
-              >
-                <FaKey /> Configurar API Key
-              </button>
-            </motion.div>
+            </div>
           ) : (
-            <div className="space-y-4 py-2">
-              {messages.map((message, index) => (
-                <Message 
-                  key={index} 
-                  message={message} 
-                  isUser={message.isUser}
-                  provider={currentProvider}
-                />
-              ))}
-              {streamingResponse && (
-                <Message 
-                  message={{ content: streamingResponse, provider: currentProvider }} 
-                  isUser={false}
-                  isStreaming={true}
-                  provider={currentProvider}
-                />
-              )}
-            </div>
+            messages.map((message, index) => (
+              <Message
+                key={index}
+                message={message}
+                isUser={message.role === 'user'}
+                provider={currentProvider}
+                isStreaming={false}
+                onCodeBlockClick={copyCode}
+              />
+            ))
           )}
-        </AnimatePresence>
-        
-        {/* Indicador de escritura */}
-        {isLoading && !streamingResponse && (
-          <div className="flex items-center gap-2 px-4 py-2 text-sm text-gray-500 dark:text-gray-400 mt-2">
-            <div className="flex space-x-1">
-              <div className="w-2 h-2 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '0ms' }}></div>
-              <div className="w-2 h-2 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '150ms' }}></div>
-              <div className="w-2 h-2 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '300ms' }}></div>
-            </div>
-            <span>Pensando...</span>
-          </div>
-        )}
+        </div>
       </div>
 
-      {/* Formulario de entrada */}
-      <div className="p-3 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 shadow-lg">
-        <form onSubmit={handleSubmit} className="max-w-4xl mx-auto">
-          <div className="flex items-center gap-2">
-            <div className="relative flex-grow">
-              <input
-                ref={inputRef}
-                type="text"
-                value={inputMessage}
-                onChange={(e) => setInputMessage(e.target.value)}
-                placeholder="Escribe un mensaje..."
-                className="w-full p-3 pr-12 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-600 dark:bg-gray-700 dark:text-white transition-all"
-                disabled={isLoading}
-              />
-              {inputMessage.length > 0 && (
-                <div className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400">
-                  <kbd className="px-2 py-1 text-xs bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded">Enter ↵</kbd>
-                </div>
-              )}
-            </div>
+      <div className="flex-none p-4 border-t border-gray-200 dark:border-gray-700">
+        <div className="max-w-4xl mx-auto">
+          <form onSubmit={handleSubmit} className="flex gap-2">
+            <input
+              type="text"
+              value={inputMessage}
+              onChange={(e) => setInputMessage(e.target.value)}
+              placeholder="Escribe tu mensaje..."
+              className="flex-1 px-4 py-2 rounded-lg bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              disabled={isLoading}
+            />
             <button
               type="submit"
               disabled={isLoading || !inputMessage.trim()}
-              className="bg-gradient-to-r from-blue-500 to-blue-700 hover:from-blue-600 hover:to-blue-800 text-white p-3 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
-              aria-label="Enviar mensaje"
+              className="px-4 py-2 rounded-lg bg-blue-500 hover:bg-blue-600 text-white disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <BiSend className="text-xl" />
+              {isLoading ? 'Enviando...' : 'Enviar'}
             </button>
-          </div>
-        </form>
+          </form>
+        </div>
       </div>
 
-      {/* Modal de API key */}
       <ApiKeyModal
         isOpen={showApiKeyModal}
-        onClose={() => {
-          setShowApiKeyModal(false);
-        }}
+        onClose={() => setShowApiKeyModal(false)}
         provider={currentProvider}
       />
     </div>
