@@ -38,28 +38,171 @@ body {
   transition-duration: 150ms;
 }
 
-/* Mensajes de markdown */
-.prose pre {
+/* Estilos para markdown en mensajes */
+.markdown-content {
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+.markdown-content p {
+  margin-bottom: 1rem;
+  line-height: 1.6;
+}
+
+.markdown-content h1,
+.markdown-content h2,
+.markdown-content h3,
+.markdown-content h4,
+.markdown-content h5,
+.markdown-content h6 {
+  font-weight: 600;
+  margin-top: 1.5rem;
+  margin-bottom: 1rem;
+  line-height: 1.25;
+}
+
+.markdown-content h1 {
+  font-size: 1.75rem;
+  border-bottom: 1px solid rgba(125, 125, 125, 0.3);
+  padding-bottom: 0.3rem;
+}
+
+.markdown-content h2 {
+  font-size: 1.5rem;
+}
+
+.markdown-content h3 {
+  font-size: 1.25rem;
+}
+
+.markdown-content a {
+  color: #3b82f6;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.markdown-content a:hover {
+  text-decoration: none;
+}
+
+.markdown-content ul,
+.markdown-content ol {
+  padding-left: 1.5rem;
+  margin-bottom: 1rem;
+}
+
+.markdown-content ul {
+  list-style-type: disc;
+}
+
+.markdown-content ol {
+  list-style-type: decimal;
+}
+
+.markdown-content li {
+  margin-bottom: 0.25rem;
+}
+
+.markdown-content blockquote {
+  border-left: 4px solid #3b82f6;
+  padding-left: 1rem;
+  font-style: italic;
+  margin: 1rem 0;
+  color: rgba(107, 114, 128, 1);
+}
+
+.dark .markdown-content blockquote {
+  color: rgba(156, 163, 175, 1);
+}
+
+.markdown-content pre {
   background-color: rgba(0, 0, 0, 0.05);
   border-radius: 0.5rem;
   padding: 1rem;
   overflow-x: auto;
+  margin: 1rem 0;
 }
 
-.dark .prose pre {
-  background-color: rgba(255, 255, 255, 0.05);
+.dark .markdown-content pre {
+  background-color: #1e1e1e;
 }
 
-.prose code {
+.markdown-content code {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   font-size: 0.9em;
+}
+
+.markdown-content p code,
+.markdown-content li code,
+.markdown-content h1 code,
+.markdown-content h2 code,
+.markdown-content h3 code {
   background-color: rgba(0, 0, 0, 0.05);
   padding: 0.2em 0.4em;
   border-radius: 0.25rem;
+  font-size: 0.9em;
 }
 
-.dark .prose code {
+.dark .markdown-content p code,
+.dark .markdown-content li code,
+.dark .markdown-content h1 code,
+.dark .markdown-content h2 code,
+.dark .markdown-content h3 code {
   background-color: rgba(255, 255, 255, 0.1);
+  color: #e5e7eb;
+}
+
+.markdown-content table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1rem 0;
+  overflow-x: auto;
+  display: block;
+}
+
+.markdown-content th,
+.markdown-content td {
+  border: 1px solid rgba(125, 125, 125, 0.3);
+  padding: 0.5rem 1rem;
+  text-align: left;
+}
+
+.markdown-content th {
+  background-color: rgba(0, 0, 0, 0.05);
+  font-weight: 600;
+}
+
+.dark .markdown-content th {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+/* Estilo para bloques de código */
+.markdown-content .code-block {
+  position: relative;
+  margin: 1rem 0;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  border: 1px solid rgba(125, 125, 125, 0.3);
+}
+
+.dark .markdown-content .code-block {
+  border-color: rgba(75, 85, 99, 0.5);
+}
+
+.markdown-content .code-block-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background-color: rgba(0, 0, 0, 0.1);
+  padding: 0.5rem 1rem;
+  font-family: ui-monospace, monospace;
+  font-size: 0.8rem;
+  color: rgba(75, 85, 99, 1);
+}
+
+.dark .markdown-content .code-block-header {
+  background-color: rgba(31, 41, 55, 1);
+  color: rgba(209, 213, 219, 1);
 }
 
 /* Estilo personalizado para scroll suave en el chat */

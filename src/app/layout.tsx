@@ -1,43 +1,26 @@
-import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
-import "./globals.css";
-import { ApiKeyProvider } from './context/ApiKeyContext';
+import './globals.css';
+import { Inter } from 'next/font/google';
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
+const inter = Inter({ subsets: ['latin'] });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
-
-export const metadata: Metadata = {
-  title: "Montana AI - Chat con múltiples modelos",
-  description: "Interfaz para chatear con múltiples modelos de IA como DeepSeek y X.AI (Grok)",
-  themeColor: [
-    { media: '(prefers-color-scheme: light)', color: 'white' },
-    { media: '(prefers-color-scheme: dark)', color: '#111827' }
-  ],
+export const metadata = {
+  title: 'Montana AI',
+  description: 'Chat con IA usando DeepSeek y Grok',
 };
 
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+export const viewport = {
+  themeColor: '#000000',
+  width: 'device-width',
+  initialScale: 1,
+};
+
+export default function RootLayout({ children }) {
   return (
     <html lang="es" className="h-full">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-        suppressHydrationWarning
-      >
-        <ApiKeyProvider>
-          <div className="flex flex-col h-full">
-            {children}
-          </div>
-        </ApiKeyProvider>
+      <body className={`${inter.className} h-full antialiased`} suppressHydrationWarning>
+        <div className="flex flex-col h-full">
+          {children}
+        </div>
       </body>
     </html>
   );

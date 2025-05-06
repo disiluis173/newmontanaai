@@ -15,18 +15,16 @@ import {
   FaMarkdown,
   FaFilePdf,
   FaFileAlt,
-  FaFileCode
+  FaFileCode,
+  FaBrain,
+  FaSpinner,
+  FaImage
 } from 'react-icons/fa';
 import { BiSend } from 'react-icons/bi';
 import Message from './Message';
 import ApiKeyModal from './ApiKeyModal';
-import { useApiKey } from '../context/ApiKeyContext';
-import { 
-  sendMessageToDeepSeek, 
-  sendMessageToXAI,
-  streamMessageFromDeepSeek,
-  streamMessageFromXAI
-} from '../lib/utils';
+import ChatLimitModal from './ChatLimitModal';
+import { AI_PROVIDERS, getModelsForProvider, modelSupportsReasoning } from '../config/models';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
@@ -35,18 +33,21 @@ import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 
 const Chat = () => {
-  const apiKeyContext = useApiKey();
-  
   const [messages, setMessages] = useState([]);
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [currentProvider, setCurrentProvider] = useState('deepseek');
-  const [currentModel, setCurrentModel] = useState('deepseek-chat');
+  const [currentModel, setCurrentModel] = useState('grok-3-mini-beta');
   const [showApiKeyModal, setShowApiKeyModal] = useState(false);
-  const [streamingResponse, setStreamingResponse] = useState('');
+  const [error, setError] = useState(null);
+  const [isThinking, setIsThinking] = useState(false);
+  const [reasoningLevel, setReasoningLevel] = useState('low');
+  const [apiStatus, setApiStatus] = useState({ deepseek: null, xai: null });
+  const [showStatus, setShowStatus] = useState(false);
   const chatContainerRef = useRef(null);
   const inputRef = useRef(null);
   const [hasApiKeyCheck, setHasApiKeyCheck] = useState(false);
+  const [maxTokens, setMaxTokens] = useState(2000);
 
   // Nuevo estado para las opciones de código
   const [codeOptions, setCodeOptions] = useState({
@@ -56,48 +57,43 @@ const Chat = () => {
     position: { x: 0, y: 0 }
   });
 
-  // Configuración de modelos disponibles
-  const MODEL_CONFIG = {
-    deepseek: {
-      'deepseek-chat': {
-        name: 'DeepSeek Chat',
-        description: 'Modelo estándar de DeepSeek'
-      }
-    },
-    xai: {
-      'grok-3-beta': {
-        name: 'Grok 3 Beta',
-        description: 'Modelo estándar de Grok',
-        price: { input: '$3.00', output: '$15.00' }
-      },
-      'grok-3-mini-beta': {
-        name: 'Grok 3 Mini Beta',
-        description: 'Modelo económico de Grok',
-        price: { input: '$0.30', output: '$0.50' }
-      },
-      'grok-3-fast-beta': {
-        name: 'Grok 3 Fast Beta',
-        description: 'Modelo rápido de Grok',
-        price: { input: '$5.00', output: '$25.00' }
-      },
-      'grok-3-mini-fast-beta': {
-        name: 'Grok 3 Mini Fast Beta',
-        description: 'Modelo rápido y económico de Grok',
-        price: { input: '$0.60', output: '$4.00' }
-      }
-    }
+  // Estados para la limitación de mensajes
+  const [dailyMessageCount, setDailyMessageCount] = useState(0);
+  const [unlimitedMode, setUnlimitedMode] = useState(false);
+  const [showLimitModal, setShowLimitModal] = useState(false);
+  const [blockUntil, setBlockUntil] = useState(null);
+  const [blockDuration, setBlockDuration] = useState(12); // Horas iniciales de bloqueo
+
+  // Constantes para la limitación de mensajes
+  const DAILY_MESSAGE_LIMIT = 30;
+  const BLOCK_INCREMENT = 12; // Incremento en horas por cada intento adicional
+
+  // Convertir los modelos de la configuración global a formato compatible con los componentes
+  const getFormattedModels = (provider) => {
+    return getModelsForProvider(provider).map(model => ({
+      value: model.id,
+      label: model.name,
+      price: model.price,
+      context: model.context,
+      supportsReasoning: model.supportsReasoning
+    }));
   };
 
   // Actualizar el modelo cuando cambie el proveedor
   useEffect(() => {
-    setCurrentModel(MODEL_CONFIG[currentProvider]?.default || '');
+    if (currentProvider) {
+      const defaultModel = AI_PROVIDERS[currentProvider].defaultModel;
+      setCurrentModel(defaultModel);
+      // Desactivar el razonamiento por defecto al cambiar de proveedor
+      setReasoningLevel('');
+    }
   }, [currentProvider]);
 
   // Verificar si hay API key al iniciar o cambiar de proveedor, pero solo si no hay mensajes
   useEffect(() => {
     // Solo verificamos una vez al inicio o al cambiar de proveedor
     if (!hasApiKeyCheck || currentProvider) {
-      const hasKey = apiKeyContext?.apiKeys?.[currentProvider];
+      const hasKey = localStorage.getItem(`${currentProvider}_api_key`);
       
       // Solo mostramos el modal si no hay API key y no hay mensajes
       if (!hasKey && messages.length === 0) {
@@ -106,14 +102,180 @@ const Chat = () => {
       
       setHasApiKeyCheck(true);
     }
-  }, [currentProvider, apiKeyContext, messages.length, hasApiKeyCheck]);
+    
+    // Cargar contadores de mensajes
+    loadMessageCounters();
+  }, [currentProvider, messages.length, hasApiKeyCheck]);
+  
+  // Función para cargar los contadores de mensajes
+  const loadMessageCounters = () => {
+    try {
+      // Obtener fecha actual en formato YYYY-MM-DD
+      const today = new Date().toISOString().split('T')[0];
+      const now = new Date().getTime();
+      
+      // Obtener datos almacenados
+      const storedData = localStorage.getItem('chat_message_data');
+      if (storedData) {
+        const data = JSON.parse(storedData);
+        
+        // Si los datos son de hoy, cargar contador
+        if (data.date === today) {
+          setDailyMessageCount(data.count);
+        } else {
+          // Si son de otro día, reiniciar contador
+          setDailyMessageCount(0);
+          localStorage.setItem('chat_message_data', JSON.stringify({
+            date: today,
+            count: 0,
+            unlimited: data.unlimited || false,
+            blockUntil: data.blockUntil || null,
+            blockDuration: data.blockDuration || 12
+          }));
+        }
+        
+        // Cargar estado de modo ilimitado
+        setUnlimitedMode(data.unlimited || false);
+        
+        // Cargar tiempo de bloqueo si existe
+        if (data.blockUntil) {
+          // Si ya pasó el tiempo de bloqueo, resetear
+          if (data.blockUntil < now) {
+            setBlockUntil(null);
+            setBlockDuration(12); // Reiniciar duración de bloqueo
+          } else {
+            setBlockUntil(data.blockUntil);
+            setBlockDuration(data.blockDuration || 12);
+          }
+        }
+      } else {
+        // Inicializar datos si no existen
+        localStorage.setItem('chat_message_data', JSON.stringify({
+          date: today,
+          count: 0,
+          unlimited: false,
+          blockUntil: null,
+          blockDuration: 12
+        }));
+      }
+    } catch (error) {
+      console.error('Error al cargar contadores de mensajes:', error);
+    }
+  };
+  
+  // Función para formatear el tiempo restante de bloqueo
+  const formatTimeRemaining = (blockUntilTime) => {
+    const now = new Date().getTime();
+    const diff = blockUntilTime - now;
+    
+    if (diff <= 0) return 'Desbloqueado';
+    
+    const hours = Math.floor(diff / (1000 * 60 * 60));
+    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+    
+    return `${hours} hora${hours !== 1 ? 's' : ''} y ${minutes} minuto${minutes !== 1 ? 's' : ''}`;
+  };
+  
+  // Función para incrementar el tiempo de bloqueo
+  const increaseBlockTime = () => {
+    try {
+      const now = new Date().getTime();
+      const newDuration = blockDuration + BLOCK_INCREMENT;
+      const newBlockUntil = now + (newDuration * 60 * 60 * 1000); // Convertir horas a milisegundos
+      
+      setBlockDuration(newDuration);
+      setBlockUntil(newBlockUntil);
+      
+      // Actualizar localStorage
+      const storedData = localStorage.getItem('chat_message_data');
+      const data = storedData ? JSON.parse(storedData) : {};
+      const today = new Date().toISOString().split('T')[0];
+      
+      localStorage.setItem('chat_message_data', JSON.stringify({
+        ...data,
+        date: today,
+        blockUntil: newBlockUntil,
+        blockDuration: newDuration
+      }));
+      
+      return newBlockUntil;
+    } catch (error) {
+      console.error('Error al actualizar tiempo de bloqueo:', error);
+      return null;
+    }
+  };
+  
+  // Función para actualizar el contador de mensajes
+  const updateMessageCount = () => {
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const newCount = dailyMessageCount + 1;
+      setDailyMessageCount(newCount);
+      
+      // Actualizar localStorage
+      const storedData = localStorage.getItem('chat_message_data');
+      const data = storedData ? JSON.parse(storedData) : { 
+        unlimited: false,
+        blockUntil: null,
+        blockDuration: 12 
+      };
+      
+      // Si alcanzó el límite, establecer bloqueo inicial de 12 horas
+      let newBlockUntil = data.blockUntil;
+      let newBlockDuration = data.blockDuration;
+      
+      if (newCount >= DAILY_MESSAGE_LIMIT && !blockUntil) {
+        const now = new Date().getTime();
+        newBlockUntil = now + (12 * 60 * 60 * 1000); // 12 horas en milisegundos
+        newBlockDuration = 12;
+        setBlockUntil(newBlockUntil);
+        setBlockDuration(newBlockDuration);
+      }
+      
+      localStorage.setItem('chat_message_data', JSON.stringify({
+        date: today,
+        count: newCount,
+        unlimited: data.unlimited || false,
+        blockUntil: newBlockUntil,
+        blockDuration: newBlockDuration
+      }));
+    } catch (error) {
+      console.error('Error al actualizar contador de mensajes:', error);
+    }
+  };
+  
+  // Función para desbloquear modo ilimitado
+  const unlockUnlimitedMode = () => {
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      setUnlimitedMode(true);
+      setBlockUntil(null); // Eliminar bloqueo actual si existe
+      
+      // Actualizar localStorage
+      const storedData = localStorage.getItem('chat_message_data');
+      const data = storedData ? JSON.parse(storedData) : { 
+        count: dailyMessageCount,
+        blockDuration: 12 
+      };
+      
+      localStorage.setItem('chat_message_data', JSON.stringify({
+        date: today,
+        count: data.count,
+        unlimited: true,
+        blockUntil: null,
+        blockDuration: data.blockDuration
+      }));
+    } catch (error) {
+      console.error('Error al desbloquear modo ilimitado:', error);
+    }
+  };
 
   // Scroll al final del chat cuando hay nuevos mensajes
   useEffect(() => {
     if (chatContainerRef.current) {
       chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
     }
-  }, [messages, streamingResponse]);
+  }, [messages]);
 
   // Focus al input cuando se carga la página
   useEffect(() => {
@@ -127,92 +289,161 @@ const Chat = () => {
     setCurrentProvider(newProvider);
     
     // Solo verificamos si hay API key para el nuevo proveedor si hemos tenido interacción
-    if (messages.length > 0 && apiKeyContext?.apiKeys && !apiKeyContext.apiKeys[newProvider]) {
+    if (messages.length > 0 && localStorage.getItem(`${newProvider}_api_key`) === null) {
       setShowApiKeyModal(true);
     }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!inputMessage.trim()) return;
-
-    const userMessage = {
-      role: 'user',
-      content: inputMessage,
-    };
-
-    // Verificar si hay una API key configurada
-    const apiKey = apiKeyContext?.apiKeys?.[currentProvider];
-    if (!apiKey) {
-      setShowApiKeyModal(true);
+    if (!inputMessage.trim() || isLoading) return;
+    if (!currentModel) {
+      setError('Por favor selecciona un modelo válido antes de enviar tu mensaje.');
+      return;
+    }
+    
+    // Verificar si está bloqueado por tiempo
+    const now = new Date().getTime();
+    if (!unlimitedMode && blockUntil && blockUntil > now) {
+      setError(`Chat bloqueado por ${formatTimeRemaining(blockUntil)}. Introduce la contraseña para desbloquear.`);
+      setShowLimitModal(true);
+      return;
+    }
+    
+    // Verificar límite diario
+    if (!unlimitedMode && dailyMessageCount >= DAILY_MESSAGE_LIMIT) {
+      // Si ya está en el límite pero no hay bloqueo activo, activar bloqueo inicial
+      if (!blockUntil) {
+        const newBlockUntil = increaseBlockTime();
+        setError(`Límite alcanzado. Chat bloqueado por ${formatTimeRemaining(newBlockUntil)}. Introduce la contraseña para desbloquear.`);
+      } else {
+        // Si ya hay bloqueo, incrementar el tiempo
+        const newBlockUntil = increaseBlockTime();
+        setError(`Intento de enviar mensaje durante bloqueo. Tiempo incrementado a ${formatTimeRemaining(newBlockUntil)}. Introduce la contraseña para desbloquear.`);
+      }
+      
+      setShowLimitModal(true);
       return;
     }
 
-    // Actualizar el chat con el mensaje del usuario
-    setMessages(prev => [...prev, { ...userMessage, isUser: true }]);
+    const userMessage = { role: 'user', content: inputMessage };
+    setMessages(prev => [...prev, userMessage]);
     setInputMessage('');
     setIsLoading(true);
-    setStreamingResponse('');
+    setIsThinking(true);
+    setError(null);
+    
+    // Actualizar contador de mensajes si no está en modo ilimitado
+    if (!unlimitedMode) {
+      updateMessageCount();
+    }
 
     try {
+      const apiKey = localStorage.getItem(`${currentProvider}_api_key`);
+      if (!apiKey) {
+        setShowApiKeyModal(true);
+        setIsLoading(false);
+        setIsThinking(false);
+        return;
+      }
+
+      const requestBody = {
+        messages: [...messages, userMessage],
+        provider: currentProvider,
+        model: currentModel,
+        reasoningLevel: modelSupportsReasoning(currentProvider, currentModel) ? reasoningLevel : undefined,
+        stream: true,
+        apiKey
+      };
+      if (currentProvider === 'xai') {
+        requestBody.max_tokens = maxTokens;
+      }
+
       const response = await fetch('/api/chat', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          messages: [...messages.filter(m => !m.isUser), userMessage].map(m => ({
-            role: m.role || 'user',
-            content: m.content
-          })),
-          provider: currentProvider,
-          apiKey: apiKey,
-          model: currentModel
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody)
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Error en la respuesta del servidor');
+        let errorMsg = 'Error en la respuesta del servidor';
+        try {
+          const errorData = await response.json();
+          if (errorData && errorData.error) {
+            errorMsg = errorData.error;
+          }
+        } catch (e) {}
+        setError(errorMsg);
+        setIsLoading(false);
+        setIsThinking(false);
+        return;
       }
 
       const reader = response.body.getReader();
-      const decoder = new TextDecoder();
+      let assistantMessage = { role: 'assistant', content: '', reasoning: '' };
+      let isReasoning = false;
 
       while (true) {
-        try {
-          const { done, value } = await reader.read();
-          if (done) break;
-          
-          const chunk = decoder.decode(value);
-          setStreamingResponse(prev => prev + chunk);
-        } catch (error) {
-          console.error('Error al leer el stream:', error);
-          throw new Error('Error al recibir la respuesta del servidor');
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = new TextDecoder().decode(value);
+        const lines = chunk.split('\n');
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const jsonStr = line.slice(6).trim();
+            if (jsonStr === '[DONE]') continue;
+            try {
+              const data = JSON.parse(jsonStr);
+              
+              if (data.choices?.[0]?.delta) {
+                const delta = data.choices[0].delta;
+                
+                if (delta.reasoning_content) {
+                  isReasoning = true;
+                  assistantMessage.reasoning += delta.reasoning_content;
+                } else if (delta.content) {
+                  isReasoning = false;
+                  assistantMessage.content += delta.content;
+                }
+              }
+            } catch (err) {
+              // No mostrar el error en el chat
+              console.warn('Chunk JSON parse error:', err);
+            }
+          }
         }
+
+        setMessages(prev => {
+          const newMessages = [...prev];
+          const lastMessage = newMessages[newMessages.length - 1];
+          
+          if (lastMessage.role === 'assistant') {
+            if (isReasoning) {
+              lastMessage.reasoning = assistantMessage.reasoning;
+            } else {
+              lastMessage.content = assistantMessage.content;
+            }
+          } else {
+            newMessages.push({ ...assistantMessage });
+          }
+          
+          return newMessages;
+        });
       }
     } catch (error) {
-      console.error('Error al enviar mensaje:', error);
-      setStreamingResponse(`Error: ${error.message}. Por favor verifica tu API key e intenta nuevamente.`);
+      console.error('Error:', error);
+      setError(error.message || 'Ocurrió un error al procesar tu mensaje');
+      setMessages(prev => [...prev, { 
+        role: 'assistant', 
+        content: 'Lo siento, hubo un error al procesar tu mensaje. Por favor, intenta de nuevo.' 
+      }]);
     } finally {
       setIsLoading(false);
+      setIsThinking(false);
     }
   };
-
-  // Cuando termina el streaming, agregamos el mensaje al chat
-  useEffect(() => {
-    if (!isLoading && streamingResponse) {
-      setMessages(prev => [
-        ...prev, 
-        { 
-          role: 'assistant', 
-          content: streamingResponse, 
-          provider: currentProvider 
-        }
-      ]);
-      setStreamingResponse('');
-    }
-  }, [isLoading, streamingResponse, currentProvider]);
 
   const providerClass = currentProvider === 'deepseek' ? 'from-purple-600 to-indigo-600' : 'from-blue-600 to-blue-800';
 
@@ -257,6 +488,44 @@ const Chat = () => {
     return formattedContent;
   };
 
+  // Verificar estado de las APIs
+  const checkApiStatus = async (provider, model) => {
+    try {
+      const apiKey = localStorage.getItem(`${provider}_api_key`);
+      if (!apiKey) {
+        setApiStatus(prev => ({ ...prev, [provider]: false }));
+        return;
+      }
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: [{ role: 'user', content: 'test' }],
+          provider,
+          model,
+          stream: false,
+          apiKey
+        })
+      });
+      setApiStatus(prev => ({ ...prev, [provider]: response.ok }));
+    } catch (error) {
+      setApiStatus(prev => ({ ...prev, [provider]: false }));
+    }
+  };
+
+  // Verificar APIs al cargar y cambiar de proveedor
+  useEffect(() => {
+    checkApiStatus('deepseek', 'deepseek-chat');
+    checkApiStatus('xai', 'grok-3-latest');
+  }, []);
+
+  useEffect(() => {
+    checkApiStatus(currentProvider, currentModel);
+  }, [currentProvider, currentModel]);
+
+  // Para mostrar el precio del modelo seleccionado
+  const selectedModel = getModelsForProvider(currentProvider).find(m => m.id === currentModel);
+
   return (
     <div className="flex flex-col h-screen bg-gray-50 dark:bg-gray-900">
       <div className="flex-none p-4 border-b border-gray-200 dark:border-gray-700">
@@ -265,6 +534,24 @@ const Chat = () => {
             <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-blue-800 bg-clip-text text-transparent text-center sm:text-left">
               Montana AI
             </h1>
+            {/* Indicador de mensajes y bloqueo */}
+            {!unlimitedMode && (
+              <div className="text-sm">
+                {blockUntil && blockUntil > new Date().getTime() ? (
+                  <span className="inline-flex items-center px-3 py-1 rounded-full bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200 text-xs">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                      <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                    </svg>
+                    Bloqueado ({formatTimeRemaining(blockUntil)})
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center px-3 py-1 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 text-xs">
+                    {dailyMessageCount}/{DAILY_MESSAGE_LIMIT} mensajes hoy
+                  </span>
+                )}
+              </div>
+            )}
             <div className="flex flex-col sm:flex-row items-center gap-2 w-full sm:w-auto">
               <div className="w-full sm:w-auto">
                 <select
@@ -272,42 +559,70 @@ const Chat = () => {
                   onChange={(e) => setCurrentProvider(e.target.value)}
                   className="w-full sm:w-auto px-3 py-2 rounded-lg bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white"
                 >
-                  <option value="deepseek">DeepSeek</option>
-                  <option value="xai">X.AI (Grok)</option>
+                  {Object.keys(AI_PROVIDERS).map(providerKey => (
+                    <option key={providerKey} value={providerKey}>
+                      {AI_PROVIDERS[providerKey].name}
+                    </option>
+                  ))}
                 </select>
               </div>
-              {currentProvider === 'xai' && (
-                <div className="w-full sm:w-auto">
-                  <div className="flex flex-col gap-1">
-                    <select
-                      value={currentModel}
-                      onChange={(e) => setCurrentModel(e.target.value)}
-                      className="w-full sm:w-auto px-3 py-2 rounded-lg bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white"
-                    >
-                      {Object.entries(MODEL_CONFIG.xai).map(([key, model]) => (
-                        <option key={key} value={key}>
-                          {model.name}
-                        </option>
-                      ))}
-                    </select>
-                    {currentModel && MODEL_CONFIG.xai[currentModel]?.price && (
-                      <div className="text-xs text-gray-500 dark:text-gray-400 text-center sm:text-left">
-                        Precio: {MODEL_CONFIG.xai[currentModel].price.input} / {MODEL_CONFIG.xai[currentModel].price.output}
-                      </div>
-                    )}
-                  </div>
+              <div className="w-full sm:w-auto">
+                <div className="flex flex-col gap-1">
+                  <select
+                    value={currentModel}
+                    onChange={(e) => setCurrentModel(e.target.value)}
+                    className="w-full sm:w-auto px-3 py-2 rounded-lg bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white"
+                  >
+                    {getFormattedModels(currentProvider).map((model) => (
+                      <option key={model.value} value={model.value}>
+                        {model.label}
+                      </option>
+                    ))}
+                  </select>
+                  {selectedModel && selectedModel.price && (
+                    <div className="text-xs text-gray-500 dark:text-gray-400 text-center sm:text-left">
+                      Precio: {selectedModel.price.input} / {selectedModel.price.output} | Contexto: {selectedModel.context.toLocaleString()} tokens
+                    </div>
+                  )}
                 </div>
-              )}
+              </div>
             </div>
           </div>
           <div className="flex items-center gap-2 w-full sm:w-auto justify-center sm:justify-end mt-2 sm:mt-0">
-            <button
-              onClick={() => setShowApiKeyModal(true)}
-              className="p-2 rounded-lg bg-blue-500 hover:bg-blue-600 text-white"
-              title="Configurar API Key"
+            <a 
+              href="/images" 
+              className="p-2 rounded-lg bg-purple-500 hover:bg-purple-600 text-white flex items-center gap-2"
+              title="Ir al generador de imágenes"
             >
-              <FaKey />
-            </button>
+              <FaImage />
+              <span className="hidden sm:inline">Generar Imágenes</span>
+            </a>
+            <div 
+              className="relative"
+              onMouseEnter={() => setShowStatus(true)}
+              onMouseLeave={() => setShowStatus(false)}
+            >
+              <button
+                onClick={() => setShowApiKeyModal(true)}
+                className="p-2 rounded-lg bg-blue-500 hover:bg-blue-600 text-white"
+                title="Configurar API Key"
+              >
+                <FaKey />
+              </button>
+              {showStatus && (
+                <div className="absolute right-0 top-full mt-2 p-2 bg-white dark:bg-gray-800 rounded-lg shadow-lg z-50">
+                  <div className="flex items-center gap-2">
+                    <div className={`w-2 h-2 rounded-full ${apiStatus[currentProvider] ? 'bg-green-500' : 'bg-red-500'}`} />
+                    <span className="text-sm">
+                      {apiStatus[currentProvider] ? 'Conectado' : 'No conectado'}
+                    </span>
+                  </div>
+                  {!apiStatus[currentProvider] && (
+                    <div className="text-xs text-red-500 mt-1">Verifica tu API key y el modelo seleccionado.</div>
+                  )}
+                </div>
+              )}
+            </div>
             <button
               onClick={clearChat}
               className="p-2 rounded-lg bg-red-500 hover:bg-red-600 text-white"
@@ -343,37 +658,94 @@ const Chat = () => {
             </div>
           ) : (
             messages.map((message, index) => (
-              <Message
-                key={index}
-                message={message}
-                isUser={message.role === 'user'}
-                provider={currentProvider}
-                isStreaming={false}
-                onCodeBlockClick={copyCode}
-              />
+              <div key={index} className="space-y-2">
+                <Message
+                  message={message}
+                  isUser={message.role === 'user'}
+                  provider={currentProvider}
+                  isStreaming={isLoading && index === messages.length - 1}
+                  onCodeBlockClick={copyCode}
+                />
+              </div>
             ))
+          )}
+          {isThinking && (
+            <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400">
+              <div className="animate-spin">
+                <FaSpinner />
+              </div>
+              <span>Montana AI pensando by {currentProvider === 'xai' ? 'Grok' : 'DeepSeek'}...</span>
+            </div>
+          )}
+          {error && (
+            <div className="bg-red-100 dark:bg-red-900 p-4 rounded-lg text-red-700 dark:text-red-200">
+              {error}
+            </div>
           )}
         </div>
       </div>
 
       <div className="flex-none p-4 border-t border-gray-200 dark:border-gray-700">
         <div className="max-w-4xl mx-auto">
-          <form onSubmit={handleSubmit} className="flex gap-2">
-            <input
-              type="text"
-              value={inputMessage}
-              onChange={(e) => setInputMessage(e.target.value)}
-              placeholder="Escribe tu mensaje..."
-              className="flex-1 px-4 py-2 rounded-lg bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-              disabled={isLoading}
-            />
-            <button
-              type="submit"
-              disabled={isLoading || !inputMessage.trim()}
-              className="px-4 py-2 rounded-lg bg-blue-500 hover:bg-blue-600 text-white disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isLoading ? 'Enviando...' : 'Enviar'}
-            </button>
+          <form onSubmit={handleSubmit} className="flex flex-col gap-2">
+            <div className="flex items-center gap-2">
+              <label className="text-sm text-gray-600 dark:text-gray-400">Razonamiento:</label>
+              <button
+                type="button"
+                className={`px-3 py-1 rounded ${reasoningLevel ? 'bg-blue-500 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200'}`}
+                onClick={() => setReasoningLevel(reasoningLevel ? '' : 'high')}
+                disabled={!modelSupportsReasoning(currentProvider, currentModel)}
+                title={!modelSupportsReasoning(currentProvider, currentModel) ? 'Este modelo no soporta razonamiento' : 'Activa el modo de razonamiento'}
+              >
+                {reasoningLevel ? 'Desactivar' : 'Activar'}
+              </button>
+              {reasoningLevel && (
+                <span className="text-xs text-blue-500 ml-2">Modo razonamiento activado</span>
+              )}
+              {!modelSupportsReasoning(currentProvider, currentModel) && (
+                <span className="text-xs text-gray-500">Este modelo no soporta razonamiento</span>
+              )}
+            </div>
+            {currentProvider === 'xai' && (
+              <div className="flex items-center gap-2">
+                <label className="text-sm text-gray-600 dark:text-gray-400">Tokens máximos:</label>
+                <input
+                  type="range"
+                  min={100}
+                  max={selectedModel?.context || 131072}
+                  value={maxTokens}
+                  onChange={e => setMaxTokens(Number(e.target.value))}
+                  className="w-40"
+                />
+                <span className="text-xs">{maxTokens.toLocaleString()}</span>
+              </div>
+            )}
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={inputMessage}
+                onChange={(e) => setInputMessage(e.target.value)}
+                placeholder="Escribe tu mensaje..."
+                className="flex-1 px-4 py-2 rounded-lg bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                disabled={isLoading}
+              />
+              <button
+                type="submit"
+                disabled={isLoading || !inputMessage.trim()}
+                className="px-4 py-2 rounded-lg bg-blue-500 hover:bg-blue-600 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isLoading ? (
+                  <div className="flex items-center gap-2">
+                    <div className="animate-spin">
+                      <FaSpinner />
+                    </div>
+                    <span>Enviando...</span>
+                  </div>
+                ) : (
+                  'Enviar'
+                )}
+              </button>
+            </div>
           </form>
         </div>
       </div>
@@ -383,8 +755,15 @@ const Chat = () => {
         onClose={() => setShowApiKeyModal(false)}
         provider={currentProvider}
       />
+      
+      <ChatLimitModal
+        isOpen={showLimitModal}
+        onClose={() => setShowLimitModal(false)}
+        onUnlock={unlockUnlimitedMode}
+        blockTimeRemaining={blockUntil ? formatTimeRemaining(blockUntil) : null}
+      />
     </div>
   );
 };
 
-export default Chat; 
+export default Chat;
