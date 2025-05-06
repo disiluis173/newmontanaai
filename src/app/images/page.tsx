@@ -13,6 +13,7 @@ import {
 } from 'react-icons/fa';
 import { saveAs } from 'file-saver';
 import Link from 'next/link';
+import Image from 'next/image';
 import ApiKeyModal from '../components/ApiKeyModal';
 import UnlockModal from '../components/UnlockModal';
 
@@ -235,7 +236,8 @@ export default function ImagesPage() {
       });
       
       setApiStatus(response.ok);
-    } catch (error) {
+    } catch (_) {
+      // Ignoramos el error específico pero marcamos la API como no disponible
       setApiStatus(false);
     }
   };
@@ -301,7 +303,9 @@ export default function ImagesPage() {
         try {
           const errorData = await response.json();
           errorMsg = errorData.error || errorMsg;
-        } catch (e) {}
+        } catch (_) {
+          // Ignoramos errores al intentar parsear la respuesta de error
+        }
         
         setError(errorMsg);
         setIsLoading(false);
@@ -315,8 +319,13 @@ export default function ImagesPage() {
       if (!unlimitedMode) {
         updateGenerationCount(imageCount);
       }
-    } catch (error: any) {
-      setError(error.message || 'Ocurrió un error al generar las imágenes');
+    } catch (error: unknown) {
+      // Manejo seguro de tipos con error unknown
+      if (error instanceof Error) {
+        setError(error.message);
+      } else {
+        setError('Ocurrió un error al generar las imágenes');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -361,29 +370,30 @@ export default function ImagesPage() {
       {/* Header */}
       <div className="flex-none p-4 border-b border-gray-200 dark:border-gray-700">
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
+          <div className="flex flex-col sm:flex-row items-center gap-4 w-full justify-center sm:justify-start">
             <Link 
               href="/"
-              className="flex items-center gap-2 text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white"
+              className="flex items-center gap-2 text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white mb-2 sm:mb-0"
             >
               <FaArrowLeft /> <span>Volver al Chat</span>
             </Link>
-            <h1 className="text-2xl font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent">
+            <h1 className="text-xl sm:text-2xl font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent text-center sm:text-left truncate">
               Montana AI - Generador de Imágenes
             </h1>
           </div>
           
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 mt-3 sm:mt-0">
             <div className="relative">
               <button
                 onClick={() => setShowSettings(!showSettings)}
-                className="p-2 rounded-lg bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600"
+                className="p-2 rounded-lg bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600 flex items-center gap-1"
                 title="Configuración"
               >
                 <FaCog />
+                <span className="text-xs hidden sm:inline">Configuración</span>
               </button>
               {showSettings && (
-                <div className="absolute right-0 top-full mt-2 p-4 bg-white dark:bg-gray-800 rounded-lg shadow-lg z-50 w-64">
+                <div className="absolute right-0 sm:right-0 top-full mt-2 p-4 bg-white dark:bg-gray-800 rounded-lg shadow-lg z-50 w-64 max-w-[calc(100vw-2rem)]">
                   <h3 className="font-semibold mb-2">Configuración</h3>
                   <div className="mb-3">
                     <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">
@@ -418,10 +428,11 @@ export default function ImagesPage() {
             
             <button
               onClick={() => setShowApiKeyModal(true)}
-              className="p-2 rounded-lg bg-blue-500 hover:bg-blue-600 text-white"
+              className="p-2 rounded-lg bg-blue-500 hover:bg-blue-600 text-white flex items-center gap-1"
               title="Configurar API Key"
             >
               <FaKey />
+              <span className="text-xs hidden sm:inline">API Key</span>
             </button>
           </div>
         </div>
@@ -429,28 +440,28 @@ export default function ImagesPage() {
       
       {/* Main Content */}
       <div className="flex-1 overflow-y-auto p-4">
-        <div className="max-w-5xl mx-auto space-y-6">
+        <div className="max-w-5xl mx-auto space-y-4 sm:space-y-6 px-2 sm:px-4">
           {/* Formulario de generación */}
-          <form onSubmit={generateImages} className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
+          <form onSubmit={generateImages} className="bg-white dark:bg-gray-800 p-4 sm:p-6 rounded-lg shadow-md image-form">
             <div className="mb-4">
-              <label className="block text-gray-700 dark:text-gray-300 mb-2 font-medium">
+              <label className="block text-gray-700 dark:text-gray-300 mb-2 font-medium text-center sm:text-left">
                 Describe la imagen que quieres generar:
               </label>
               <textarea
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
                 placeholder="Ej: Un gato siamés durmiendo en una canasta bajo la luz del sol..."
-                className="w-full px-4 py-3 rounded-lg bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-32"
+                className="w-full px-3 sm:px-4 py-2 sm:py-3 rounded-lg bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-24 sm:min-h-32"
                 rows={4}
               />
             </div>
             
             <div className="flex flex-col sm:flex-row items-center gap-4 mb-4">
-              <div>
-                <label className="block text-gray-700 dark:text-gray-300 mb-2 text-sm">
+              <div className="w-full sm:w-auto">
+                <label className="block text-gray-700 dark:text-gray-300 mb-2 text-sm text-center sm:text-left">
                   Número de imágenes (1-10):
                 </label>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center justify-center sm:justify-start gap-2">
                   <button
                     type="button"
                     onClick={() => setImageCount(prev => Math.max(1, prev - 1))}
@@ -471,11 +482,11 @@ export default function ImagesPage() {
                 </div>
               </div>
               
-              <div className="ml-auto">
+              <div className="w-full sm:w-auto sm:ml-auto mt-4 sm:mt-0">
                 <button
                   type="submit"
                   disabled={isLoading || !prompt.trim()}
-                  className="px-6 py-3 rounded-lg bg-blue-500 hover:bg-blue-600 text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  className="w-full sm:w-auto px-4 sm:px-6 py-3 rounded-lg bg-blue-500 hover:bg-blue-600 text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
                   {isLoading ? (
                     <>
@@ -502,29 +513,34 @@ export default function ImagesPage() {
           {/* Galería de imágenes generadas */}
           {images.length > 0 && (
             <div>
-              <h2 className="text-xl font-semibold mb-4 text-gray-800 dark:text-gray-200">
+              <h2 className="text-xl font-semibold mb-4 text-gray-800 dark:text-gray-200 text-center sm:text-left">
                 Imágenes Generadas ({images.length})
               </h2>
               
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
                 {images.map((image, index) => (
                   <div key={index} className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden">
                     <div className="relative aspect-square">
-                      <img
-                        src={image.url || image.b64_json}
+                      <Image
+                        src={image.url || image.b64_json || ''}
                         alt={`Imagen generada ${index + 1}`}
                         className="w-full h-full object-cover"
+                        fill
+                        sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+                        priority={index < 2}
                       />
-                      <button
-                        onClick={() => downloadImage(image.url || image.b64_json || '', index)}
-                        className="absolute bottom-2 right-2 p-2 rounded-full bg-gray-800 bg-opacity-70 text-white hover:bg-opacity-90"
-                        title="Descargar imagen"
-                      >
-                        <FaDownload />
-                      </button>
+                      <div className="absolute bottom-2 right-2 flex gap-2">
+                        <button
+                          onClick={() => downloadImage(image.url || image.b64_json || '', index)}
+                          className="p-2 rounded-full bg-gray-800 bg-opacity-70 text-white hover:bg-opacity-90"
+                          title="Descargar imagen"
+                        >
+                          <FaDownload />
+                        </button>
+                      </div>
                     </div>
                     {image.revised_prompt && (
-                      <div className="p-3 text-xs text-gray-600 dark:text-gray-400 border-t border-gray-200 dark:border-gray-700">
+                      <div className="p-3 text-xs text-gray-600 dark:text-gray-400 border-t border-gray-200 dark:border-gray-700 break-words">
                         <p className="font-medium mb-1">Prompt revisado:</p>
                         <p>{image.revised_prompt}</p>
                       </div>
@@ -537,39 +553,39 @@ export default function ImagesPage() {
           
           {/* Mensaje de bienvenida cuando no hay imágenes */}
           {!isLoading && images.length === 0 && (
-            <div className="flex flex-col items-center justify-center h-64 text-center text-gray-500 dark:text-gray-400 gap-6">
-              <div className="p-6 rounded-full bg-gradient-to-r from-purple-600 to-blue-600 shadow-xl">
-                <FaImage className="text-5xl text-white" />
+            <div className="flex flex-col items-center justify-center h-64 text-center text-gray-500 dark:text-gray-400 gap-4 sm:gap-6 px-4">
+              <div className="p-4 sm:p-6 rounded-full bg-gradient-to-r from-purple-600 to-blue-600 shadow-xl">
+                <FaImage className="text-4xl sm:text-5xl text-white" />
               </div>
               <div>
-                <p className="text-2xl font-bold mb-2">¡Bienvenido al Generador de Imágenes!</p>
-                <p className="max-w-md mx-auto">
+                <p className="text-xl sm:text-2xl font-bold mb-2">¡Bienvenido al Generador de Imágenes!</p>
+                <p className="max-w-md mx-auto text-sm sm:text-base">
                   Utiliza el poder de Grok 2 Image para crear imágenes asombrosas a partir de tus descripciones.
                   Cada imagen generada cuesta $0.07.
                 </p>
                 <div className="mt-4 text-center">
                   {unlimitedMode ? (
-                    <span className="inline-flex items-center px-3 py-1 rounded-full bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <span className="inline-flex items-center px-2 sm:px-3 py-1 rounded-full bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200 text-xs sm:text-sm">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 sm:h-4 sm:w-4 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
                       </svg>
-                      Modo Ilimitado Activado
+                      <span className="whitespace-nowrap">Modo Ilimitado Activado</span>
                     </span>
                   ) : blockUntil && blockUntil > new Date().getTime() ? (
-                    <span className="inline-flex items-center px-3 py-1 rounded-full bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <span className="inline-flex items-center px-2 sm:px-3 py-1 rounded-full bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200 text-xs sm:text-sm">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 sm:h-4 sm:w-4 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
                         <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
                       </svg>
-                      Bloqueado por {formatTimeRemaining(blockUntil)}
+                      <span className="whitespace-nowrap">Bloqueado por {formatTimeRemaining(blockUntil)}</span>
                     </span>
                   ) : (
-                    <span className="inline-flex items-center px-3 py-1 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <span className="inline-flex items-center px-2 sm:px-3 py-1 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200 text-xs sm:text-sm">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 sm:h-4 sm:w-4 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
                         <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
                       </svg>
-                      {dailyGenerations} de {DAILY_LIMIT} imágenes generadas hoy
+                      <span className="whitespace-nowrap">{dailyGenerations} de {DAILY_LIMIT} imágenes generadas hoy</span>
                     </span>
                   )}
                 </div>
