@@ -1,0 +1,26 @@
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
+[functions]
+  # Aumentar el tiempo de espera para funciones serverless
+  node_bundler = "esbuild"
+  external_node_modules = ["sharp"]
+
+[[redirects]]
+  # Asegurar que las solicitudes a API se manejen correctamente
+  from = "/api/*"
+  to = "/.netlify/functions/nextjs-server"
+  status = 200
+  force = true
+
+[[headers]]
+  # Configurar CORS para permitir solicitudes desde cualquier origen
+  for = "/api/*"
+    [headers.values]
+    Access-Control-Allow-Origin = "*"
+    Access-Control-Allow-Methods = "GET, POST, OPTIONS"
+    Access-Control-Allow-Headers = "Content-Type"

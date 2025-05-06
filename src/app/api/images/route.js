@@ -38,17 +38,28 @@ export async function POST(req) {
   } catch (error) {
     console.error('Error en la generación de imágenes:', error);
     
-    // Manejar diferentes tipos de errores
-    if (error.status) {
-      return NextResponse.json(
-        { error: error.message || 'Error al procesar la solicitud de imagen' },
-        { status: error.status }
-      );
+    // Parsear errores de OpenAI 
+    let errorMessage = 'Error al procesar la solicitud de imagen';
+    let statusCode = 500;
+    
+    try {
+      // Intentar obtener más detalles del error
+      if (error.response) {
+        errorMessage = error.response.data?.error?.message || errorMessage;
+        statusCode = error.response.status || statusCode;
+      } else if (error.status) {
+        errorMessage = error.message || errorMessage;
+        statusCode = error.status || statusCode;
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+    } catch (e) {
+      console.error('Error adicional al procesar el error original:', e);
     }
     
     return NextResponse.json(
-      { error: error.message || 'Error al procesar la solicitud de imagen' },
-      { status: 500 }
+      { error: errorMessage },
+      { status: statusCode }
     );
   }
 }
