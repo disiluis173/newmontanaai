@@ -25,17 +25,22 @@ const Chat = () => {
   const [streamingResponse, setStreamingResponse] = useState('');
   const chatContainerRef = useRef(null);
   const inputRef = useRef(null);
+  const [hasApiKeyCheck, setHasApiKeyCheck] = useState(false);
 
-  // Verificar si hay API key al iniciar o cambiar de proveedor
+  // Verificar si hay API key al iniciar o cambiar de proveedor, pero solo si no hay mensajes
   useEffect(() => {
-    if (apiKeyContext?.apiKeys) {
-      const hasKey = apiKeyContext.apiKeys[currentProvider];
+    // Solo verificamos una vez al inicio o al cambiar de proveedor
+    if (!hasApiKeyCheck || currentProvider) {
+      const hasKey = apiKeyContext?.apiKeys?.[currentProvider];
+      
+      // Solo mostramos el modal si no hay API key y no hay mensajes
       if (!hasKey && messages.length === 0) {
-        // Solo mostramos el modal al iniciar si no hay mensajes
         setShowApiKeyModal(true);
       }
+      
+      setHasApiKeyCheck(true);
     }
-  }, [currentProvider, apiKeyContext, messages.length]);
+  }, [currentProvider, apiKeyContext, messages.length, hasApiKeyCheck]);
 
   // Scroll al final del chat cuando hay nuevos mensajes
   useEffect(() => {
@@ -55,8 +60,8 @@ const Chat = () => {
   const handleProviderChange = (newProvider) => {
     setCurrentProvider(newProvider);
     
-    // Verificamos si hay API key para el nuevo proveedor
-    if (apiKeyContext?.apiKeys && !apiKeyContext.apiKeys[newProvider]) {
+    // Solo verificamos si hay API key para el nuevo proveedor si hemos tenido interacción
+    if (messages.length > 0 && apiKeyContext?.apiKeys && !apiKeyContext.apiKeys[newProvider]) {
       setShowApiKeyModal(true);
     }
   };

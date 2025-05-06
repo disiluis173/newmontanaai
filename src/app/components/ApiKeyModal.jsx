@@ -10,36 +10,64 @@ const ApiKeyModal = ({ isOpen, onClose, provider }) => {
   const [apiKey, setApiKey] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [error, setError] = useState('');
   
-  // Obtener API key actual al abrir
+  // Verificar si tenemos acceso al contexto
   useEffect(() => {
-    if (isOpen && apiKeyContext?.apiKeys) {
-      setApiKey(apiKeyContext.apiKeys[provider] || '');
+    if (!apiKeyContext && isOpen) {
+      console.error('Error: No se pudo acceder al contexto de API Key');
+      setError('No se pudo acceder al sistema de almacenamiento de API keys. Por favor, reinicia la aplicación.');
+    } else if (isOpen) {
+      // Si tenemos contexto y está abierto, cargamos el valor actual
+      try {
+        const currentKey = apiKeyContext?.apiKeys?.[provider] || '';
+        setApiKey(currentKey);
+        
+        if (currentKey) {
+          console.log(`API key actual para ${provider}: ${currentKey.substring(0, 4)}...`);
+        }
+      } catch (err) {
+        console.error('Error al acceder a las API keys:', err);
+        setError('Error al acceder a las API keys guardadas.');
+      }
     }
-  }, [isOpen, apiKeyContext, provider]);
+  }, [apiKeyContext, provider, isOpen]);
 
   if (!isOpen) return null;
 
   const handleSubmit = (e) => {
     e.preventDefault();
     setIsSaving(true);
+    setError('');
     
-    // Guardar API key 
-    if (apiKeyContext?.updateApiKey) {
-      apiKeyContext.updateApiKey(provider, apiKey);
-      setSaved(true);
-      
-      // Cerrar el modal después de un breve retraso
-      setTimeout(() => {
-        onClose();
-        setTimeout(() => {
+    try {
+      // Guardar API key 
+      if (apiKeyContext?.updateApiKey) {
+        const success = apiKeyContext.updateApiKey(provider, apiKey);
+        
+        if (success) {
+          setSaved(true);
+          
+          // Cerrar el modal después de un breve retraso
+          setTimeout(() => {
+            onClose();
+            setTimeout(() => {
+              setIsSaving(false);
+              setSaved(false);
+            }, 300);
+          }, 800);
+        } else {
+          setError('No se pudo guardar la API key. Por favor intenta de nuevo.');
           setIsSaving(false);
-          setSaved(false);
-        }, 300);
-      }, 800);
-    } else {
+        }
+      } else {
+        setIsSaving(false);
+        setError('No se pudo acceder al contexto de API Key. Intenta recargar la página.');
+      }
+    } catch (err) {
+      console.error('Error al guardar la API key:', err);
+      setError('Ocurrió un error al intentar guardar: ' + err.message);
       setIsSaving(false);
-      alert("No se pudo acceder al contexto de API Key. Inténtalo de nuevo.");
     }
   };
 
@@ -81,6 +109,12 @@ const ApiKeyModal = ({ isOpen, onClose, provider }) => {
               'Las API keys de X.AI comienzan con "xai-..."'}
           </p>
         </div>
+        
+        {error && (
+          <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-lg text-red-700 dark:text-red-300 text-sm">
+            <p>{error}</p>
+          </div>
+        )}
         
         <form onSubmit={handleSubmit}>
           <div className="mb-5">
