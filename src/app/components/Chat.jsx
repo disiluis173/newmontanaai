@@ -21,11 +21,55 @@ const Chat = () => {
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [currentProvider, setCurrentProvider] = useState('deepseek');
+  const [currentModel, setCurrentModel] = useState('deepseek-chat');
   const [showApiKeyModal, setShowApiKeyModal] = useState(false);
   const [streamingResponse, setStreamingResponse] = useState('');
   const chatContainerRef = useRef(null);
   const inputRef = useRef(null);
   const [hasApiKeyCheck, setHasApiKeyCheck] = useState(false);
+
+  // Configuración de modelos disponibles
+  const MODEL_CONFIG = {
+    deepseek: {
+      default: 'deepseek-chat',
+      models: {
+        'deepseek-chat': {
+          name: 'DeepSeek Chat',
+          description: 'Modelo estándar de DeepSeek'
+        }
+      }
+    },
+    xai: {
+      default: 'grok-3-beta',
+      models: {
+        'grok-3-beta': {
+          name: 'Grok 3 Beta',
+          description: 'Modelo estándar de Grok',
+          price: { input: '$3.00', output: '$15.00' }
+        },
+        'grok-3-mini-beta': {
+          name: 'Grok 3 Mini Beta',
+          description: 'Modelo económico de Grok',
+          price: { input: '$0.30', output: '$0.50' }
+        },
+        'grok-3-fast-beta': {
+          name: 'Grok 3 Fast Beta',
+          description: 'Modelo rápido de Grok',
+          price: { input: '$5.00', output: '$25.00' }
+        },
+        'grok-3-mini-fast-beta': {
+          name: 'Grok 3 Mini Fast Beta',
+          description: 'Modelo rápido y económico de Grok',
+          price: { input: '$0.60', output: '$4.00' }
+        }
+      }
+    }
+  };
+
+  // Actualizar el modelo cuando cambie el proveedor
+  useEffect(() => {
+    setCurrentModel(MODEL_CONFIG[currentProvider]?.default || '');
+  }, [currentProvider]);
 
   // Verificar si hay API key al iniciar o cambiar de proveedor, pero solo si no hay mensajes
   useEffect(() => {
@@ -89,33 +133,45 @@ const Chat = () => {
     setStreamingResponse('');
 
     try {
-      // Array de mensajes para la API
-      const apiMessages = [...messages.filter(m => !m.isUser), userMessage].map(m => ({
-        role: m.role || 'user',
-        content: m.content
-      }));
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messages: [...messages.filter(m => !m.isUser), userMessage].map(m => ({
+            role: m.role || 'user',
+            content: m.content
+          })),
+          provider: currentProvider,
+          apiKey: apiKey,
+          model: currentModel
+        }),
+      });
 
-      // Streaming de respuesta
-      if (currentProvider === 'deepseek') {
-        await streamMessageFromDeepSeek(
-          apiKey,
-          apiMessages,
-          (chunk) => {
-            setStreamingResponse(prev => prev + chunk);
-          }
-        );
-      } else if (currentProvider === 'xai') {
-        await streamMessageFromXAI(
-          apiKey,
-          apiMessages,
-          (chunk) => {
-            setStreamingResponse(prev => prev + chunk);
-          }
-        );
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Error en la respuesta del servidor');
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+
+      while (true) {
+        try {
+          const { done, value } = await reader.read();
+          if (done) break;
+          
+          const chunk = decoder.decode(value);
+          setStreamingResponse(prev => prev + chunk);
+        } catch (error) {
+          console.error('Error al leer el stream:', error);
+          throw new Error('Error al recibir la respuesta del servidor');
+        }
       }
     } catch (error) {
       console.error('Error al enviar mensaje:', error);
-      setStreamingResponse('Error de conexión. Por favor verifica tu API key e intenta nuevamente.');
+      setStreamingResponse(`Error: ${error.message}. Por favor verifica tu API key e intenta nuevamente.`);
     } finally {
       setIsLoading(false);
     }
@@ -156,6 +212,20 @@ const Chat = () => {
             <option value="deepseek">DeepSeek AI</option>
             <option value="xai">X.AI (Grok)</option>
           </select>
+
+          {currentProvider === 'xai' && (
+            <select
+              value={currentModel}
+              onChange={(e) => setCurrentModel(e.target.value)}
+              className="bg-white/20 text-white text-sm md:text-base backdrop-blur-sm p-2 rounded-lg border border-white/30 focus:outline-none focus:ring-2 focus:ring-white/50"
+            >
+              {Object.entries(MODEL_CONFIG.xai.models).map(([key, model]) => (
+                <option key={key} value={key}>
+                  {model.name} {model.price ? `(${model.price.input} / ${model.price.output})` : ''}
+                </option>
+              ))}
+            </select>
+          )}
           
           <button
             onClick={() => setShowApiKeyModal(true)}

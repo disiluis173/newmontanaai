@@ -3,8 +3,9 @@ import OpenAI from 'openai';
 // Cliente para DeepSeek
 export const createDeepSeekClient = (apiKey) => {
   return new OpenAI({
-    baseURL: 'https://api.deepseek.com',
+    baseURL: 'https://api.deepseek.com/v1',
     apiKey: apiKey,
+    dangerouslyAllowBrowser: true
   });
 };
 
@@ -13,6 +14,7 @@ export const createXAIClient = (apiKey) => {
   return new OpenAI({
     baseURL: 'https://api.x.ai/v1',
     apiKey: apiKey,
+    dangerouslyAllowBrowser: true
   });
 };
 
